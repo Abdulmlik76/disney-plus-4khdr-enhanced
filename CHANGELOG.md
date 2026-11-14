@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.7.1 — 2026-11-14 (compatibility fork; playback unverified)
+
+- Accept `26.15.0-owl` for the Full HD service settings override after inspecting the public service/session bundles against `26.14.2-nala`. UHD remains pinned to `26.10.0-jasmine`.
+- Report a bounded SDK version in diagnostics and explain how to restore default playback when settings were not applied.
+- Disarm normal Full HD after the early XHR settings guard fails, so the next user reload starts OFF. No automatic reload or retry.
+- Extend offline tests to SDK 26.15 through both fetch and XHR, preserve unknown/UHD rejection, and verify failure recovery and diagnostic sanitization.
+- Point userscript updates to this fork's compatibility branch. Existing upstream licensing and attribution remain intact.
+- These are static and mocked checks, not a successful Disney+ playback test.
+
 ## 0.5.7 — 2026-11-07（設定パネルにIntel向け4K）
 
 - IntelのPCでは、設定パネルに「4K（Intel・このページのみ）」を表示する。表示するのは、Edgeの描画GPUがIntel（WebGL）で、WebGPUの高性能用・省電力用のアダプターにAMDがなく、IntelまたはNVIDIAだけの場合。WebGPUが使えない、答えがない、フォールバックや不明なアダプターの場合は表示しない。確認はパネルを開いたときに1回だけで、WebGLがIntel以外ならWebGPUには問い合わせない。デバイスの作成やEMEの呼び出しはしない。

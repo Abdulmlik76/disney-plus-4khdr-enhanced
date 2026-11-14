@@ -2,6 +2,8 @@
 
 [English](README.md) | 日本語
 
+> **互換修正版 v0.5.7.1（2026-11-14）:** フルHDの許可リストに静的確認済みの `26.15.0-owl` を追加し、設定未適用時の復帰処理を修正しました。この版の実機再生・1080pは未確認です。[調査・導入手順（英語）](docs/sdk-26.15-compatibility.md)。ioridev v0.5.7を基にした非公式フォークです。
+
 | GPU・接続構成 | 利用できる画質 | 外部モニター利用時 |
 | --- | --- | --- |
 | Intel内蔵GPU（処理・出力） | 4K HDR | Intel側につながる映像端子を使用 |
@@ -46,7 +48,7 @@ Windows版Microsoft EdgeでDisney+の画質要求（フルHD / Intel向け4K）�
 同じ処理をユーザースクリプトとしても配布しています。ツールバーのアイコンはないため、設定パネルはDisney+の画面右下の小さいボタンか `Alt+Shift+4` で開きます。上記の前提条件も同じです。
 
 1. Edgeに [Tampermonkey](https://www.tampermonkey.net/) を入れる。Tampermonkeyから求められた場合は、`edge://extensions` でTampermonkeyの **ユーザースクリプトを許可**（古いEdgeでは **開発者モード**）をオンにする。
-2. [Greasy Forkのページ](https://greasyfork.org/ja/scripts/603993-disney-4khdr-enhanced) で **スクリプトをインストール** を押し、Tampermonkeyの画面で **インストール** を押す。GitHubの [インストール用リンク](https://raw.githubusercontent.com/ioridev/disney-plus-4khdr-enhanced/main/extension/DisneyPlus-Edge-Enhanced.user.js) から直接入れることもできます。
+2. [Greasy Forkのページ](https://greasyfork.org/ja/scripts/603993-disney-4khdr-enhanced) で **スクリプトをインストール** を押し、Tampermonkeyの画面で **インストール** を押す。GitHubの [インストール用リンク](https://raw.githubusercontent.com/Abdulmlik76/disney-plus-4khdr-enhanced/fix/sdk-26.15-fullhd/extension/DisneyPlus-Edge-Enhanced.user.js) から直接入れることもできます。
 3. Disney+のページを再読み込みする。
 
 ※ Tampermonkeyは、入れた場所（Greasy ForkかGitHub）を定期的に確認し、新しい版を自動で更新します。Greasy Forkの版はこのリポジトリから同期しています。

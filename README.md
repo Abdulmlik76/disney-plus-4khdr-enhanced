@@ -2,6 +2,8 @@
 
 English | [日本語](README.ja.md)
 
+> **Compatibility fork v0.5.7.1 (2026-11-14):** Adds the statically checked Disney+ SDK `26.15.0-owl` to the Full HD allowlist and fixes failure recovery. Offline tests pass; actual Edge playback and 1080p are **not yet verified** for this build. See [installation and investigation notes](docs/sdk-26.15-compatibility.md). Based on [ioridev's v0.5.7](https://github.com/ioridev/disney-plus-4khdr-enhanced/tree/b113aeb).
+
 | GPU & Connection Setup | Available Quality | When Using External Monitor |
 | --- | --- | --- |
 | Intel Integrated GPU (Render & Output) | 4K HDR | Use display port wired to Intel |
@@ -46,7 +48,7 @@ These settings align the environment with the extension's operating requirements
 The same code is also available as a userscript. It has no toolbar icon: open the settings panel with the small button in the bottom-right corner of Disney+ or with `Alt+Shift+4`. The prerequisites above apply as well.
 
 1. Install [Tampermonkey](https://www.tampermonkey.net/) in Edge. If Tampermonkey asks for it, turn on **Allow user scripts** (or **Developer mode** on older Edge versions) for Tampermonkey in `edge://extensions`.
-2. Open the [Greasy Fork page](https://greasyfork.org/scripts/603993-disney-4khdr-enhanced), click **Install this script**, then click **Install** in Tampermonkey. You can also install it directly from GitHub with the [install link](https://raw.githubusercontent.com/ioridev/disney-plus-4khdr-enhanced/main/extension/DisneyPlus-Edge-Enhanced.user.js).
+2. Open the [Greasy Fork page](https://greasyfork.org/scripts/603993-disney-4khdr-enhanced), click **Install this script**, then click **Install** in Tampermonkey. You can also install it directly from GitHub with the [install link](https://raw.githubusercontent.com/Abdulmlik76/disney-plus-4khdr-enhanced/fix/sdk-26.15-fullhd/extension/DisneyPlus-Edge-Enhanced.user.js).
 3. Reload the Disney+ page.
 
 * Tampermonkey checks the place you installed from (Greasy Fork or GitHub) for updates and installs new versions automatically. Greasy Fork is synced from this repository.

@@ -4,10 +4,10 @@
 // @namespace    https://github.com/ioridev/disney-plus-edge-enhanced
 // @homepageURL  https://github.com/ioridev/disney-plus-4khdr-enhanced
 // @supportURL   https://github.com/ioridev/disney-plus-4khdr-enhanced/issues
-// @downloadURL  https://raw.githubusercontent.com/ioridev/disney-plus-4khdr-enhanced/main/extension/DisneyPlus-Edge-Enhanced.user.js
-// @updateURL    https://raw.githubusercontent.com/ioridev/disney-plus-4khdr-enhanced/main/extension/DisneyPlus-Edge-Enhanced.user.js
+// @downloadURL  https://raw.githubusercontent.com/Abdulmlik76/disney-plus-4khdr-enhanced/fix/sdk-26.15-fullhd/extension/DisneyPlus-Edge-Enhanced.user.js
+// @updateURL    https://raw.githubusercontent.com/Abdulmlik76/disney-plus-4khdr-enhanced/fix/sdk-26.15-fullhd/extension/DisneyPlus-Edge-Enhanced.user.js
 // @license      MIT
-// @version      0.5.7
+// @version      0.5.7.1
 // @description  Full-HD request mode and optional playback diagnostics for Disney+ on Windows Edge. Alt+Shift+4 opens the panel. Does not bypass DRM.
 // @description:ja Disney+のフルHD要求モードと任意表示の再生診断。Alt+Shift+4でパネルを開閉します。DRMは回避しません。
 // @match        https://www.disneyplus.com/*
@@ -20,9 +20,9 @@
 (() => {
   "use strict";
 
-  const VERSION = "0.5.7";
+  const VERSION = "0.5.7.1";
   const STORAGE_KEY = "ioridev.disneyplus4k.mode.v1";
-  const TEST_TICKET_KEY = "ioridev.disneyplus4k.once.v0.5.7";
+  const TEST_TICKET_KEY = "ioridev.disneyplus4k.once.v0.5.7.1";
   const CHECKPOINT_KEY = "ioridev.disneyplus4k.checkpoint.v1";
   const DEFAULT_MODE = "original";
   // Used only while no request mode has been saved. A saved "original" (OFF,
@@ -62,7 +62,7 @@
   // Service SDKs whose createPlaybackSession and clientParameters.configOverrides
   // ["hive-dmp"] merge were statically re-checked for the 1080p override path.
   // The UHD session constructor hook stays pinned to SUPPORTED_PLAYBACK_SDK.
-  const FHD_PLAYBACK_SDKS = new Set([SUPPORTED_PLAYBACK_SDK, "26.13.3-mbaku", "26.14.2-nala"]);
+  const FHD_PLAYBACK_SDKS = new Set([SUPPORTED_PLAYBACK_SDK, "26.13.3-mbaku", "26.14.2-nala", "26.15.0-owl"]);
   const MUTABLE_SCENARIOS = new Set([
     "ctr-regular",
     "ctr-high",
@@ -2004,7 +2004,7 @@ function createSingleVariantNetworkAdapter({
     try {
       if (typeof raw !== "string" || raw.length > 4096) return null;
       const value = JSON.parse(raw);
-      if (!/^\d+\.\d+\.\d+$/.test(value.version) || !isExperimentalMode(value.mode) || !Array.isArray(value.steps)) return null;
+      if (!/^\d+(?:\.\d+){2,3}$/.test(value.version) || !isExperimentalMode(value.mode) || !Array.isArray(value.steps)) return null;
       return { version: value.version, mode: value.mode, steps: value.steps.slice(-8).filter((step) =>
         Number.isFinite(step?.time) && step.time >= 0 && step.time <= 8640000000000000 && CHECKPOINT_PHASES.includes(step?.phase)
       ).map(({ time, phase }) => ({ time, phase })) };
@@ -2483,6 +2483,7 @@ function createSingleVariantNetworkAdapter({
     sdkConfigEdits: 0,
     sdkConfigAttempt: 0,
     sdkConfigReady: false,
+    sdkDetectedVersion: "not-observed",
     sdkConfigStatus: "未適用",
     sdkKeyConfiguration: null,
     sdkKeyConfigurationStatus: "未観測",
@@ -2905,11 +2906,15 @@ function createSingleVariantNetworkAdapter({
     const patchExport = (exported) => {
       try {
         const Service = exported?.PlaybackService;
+        const version = typeof Service === "function" ? Service.version : undefined;
+        // Keep diagnostics bounded: never retain arbitrary export values or URLs.
+        state.sdkDetectedVersion = typeof version === "string" && /^\d{1,3}\.\d{1,3}\.\d{1,3}-[a-z0-9]{1,24}$/.test(version)
+          ? version : "unrecognized";
         const supported = typeof Service === "function" && (getModePlan(state.mode).sdkUhdPolicy
-          ? Service.version === SUPPORTED_PLAYBACK_SDK
-          : FHD_PLAYBACK_SDKS.has(Service.version));
+          ? version === SUPPORTED_PLAYBACK_SDK
+          : FHD_PLAYBACK_SDKS.has(version));
         if (!supported) {
-          state.sdkConfigStatus = "対応SDKを確認できず、内部上限は未変更";
+          state.sdkConfigStatus = `Unsupported SDK (${state.sdkDetectedVersion}); resolution settings were not applied. Select OFF and reload to use Disney+ defaults.`;
           renderOverlay();
           return;
         }
@@ -3035,7 +3040,11 @@ function createSingleVariantNetworkAdapter({
       throw new DOMException(state.lastError, "AbortError");
     }
     if (getModePlan(state.mode).sdkMaxHeight && !state.sdkConfigReady) {
-      state.lastError = "SDKへ内部上限の設定上書きを渡せていないため、この比較モードの再生要求を中止しました";
+      state.lastError = `SDK settings were not applied (${state.sdkDetectedVersion}); playback request stopped. Select OFF and reload to use Disney+ defaults.`;
+      state.playbackBlocked = true;
+      // The pre-SDK XHR path used to throw without disarming normal Full HD.
+      // Restore defaults on the user's next reload, never retry automatically.
+      if (getModePlan(state.mode).continuousFhd) stopSingleVariant("sdk-config-not-applied");
       renderOverlay();
       throw new DOMException(state.lastError, "AbortError");
     }
@@ -3843,6 +3852,7 @@ function createSingleVariantNetworkAdapter({
       `前回の実験段階（保存できた範囲・今回の成功証拠ではない）: ${state.previousCheckpoint ? `${state.previousCheckpoint.mode} v${state.previousCheckpoint.version}: ${state.previousCheckpoint.steps.map((step) => `${new Date(step.time).toISOString()} ${step.phase}`).join(" → ")}` : "記録なし"}`,
       `再生要求: ${state.lastRewrite} (${state.playbackRequests}回 / 解像度編集${state.bodyEdits}件)`,
       `要求本文の解像度上限: ${state.bodyResolutionStatus}`,
+      `SDK version: ${state.sdkDetectedVersion}`,
       `SDK内部上限: ${getModePlan(state.mode).sdkMaxHeight ? state.sdkConfigStatus : "変更対象外"}`,
       `単一候補比較: ${singleVariantMode() ? `${state.singleVariantStatus} / 元variant=${state.singleVariantSourceCount}, 適合候補=${state.singleVariantCandidateCount}, 確認master=${state.singleVariantMasters}` : "変更対象外"}`,
       `HDR限定比較のnative generateRequest呼出し: ${plan.singleHdrVariant ? `${state.singleVariantGenerateCalls}/1` : "変更対象外"}`,
