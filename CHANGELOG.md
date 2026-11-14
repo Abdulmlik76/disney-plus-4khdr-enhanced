@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.7.2 — 2026-11-14 (optional NVIDIA 4K experiment)
+
+- Add a visible NVIDIA-only 4K test choice, checked before and after reload. The test runs for one page, preserves the previous Full HD/OFF preference, and does not start playback automatically.
+- Extend only the existing non-HDR-request UHD path to the inspected 26.15.0-owl service/session pair. Validate exact script origin/path, constructor shape and matching service/session versions. Intel HDR and other UHD experiments retain the old SDK restriction.
+- Request up to 3840x2160 with adaptive selection; display `4K?` as a request badge and retain actual video dimensions/frame evidence separately. HDR is not requested, but SDR delivery is not guaranteed.
+- Keep native CDM/license/output protection, DRM preflight and format restrictions intact. No forged capability results or automatic retries.
+- Add two SDK 26.15 runtime runs and regressions for the button, one-page NVIDIA gate, return to Full HD, and mismatched SDK pairs. NVIDIA 4K playback remains unverified.
+
 ## 0.5.7.1 — 2026-11-14 (compatibility fork; playback unverified)
 
 - Accept `26.15.0-owl` for the Full HD service settings override after inspecting the public service/session bundles against `26.14.2-nala`. UHD remains pinned to `26.10.0-jasmine`.

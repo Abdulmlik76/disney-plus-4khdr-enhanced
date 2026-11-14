@@ -57,7 +57,7 @@ assert.match(source, /\/\/ @name:ja\s+Disney\+ 4KHDR Enhanced\n/);
 assert.match(source, /\/\/ @namespace\s+https:\/\/github\.com\/ioridev\/disney-plus-edge-enhanced\n/, 'legacy userscript namespace stays an identifier');
 assert.match(source, /\/\/ @homepageURL\s+https:\/\/github\.com\/ioridev\/disney-plus-4khdr-enhanced\n/);
 assert.match(source, /\/\/ @supportURL\s+https:\/\/github\.com\/ioridev\/disney-plus-4khdr-enhanced\/issues\n/);
-const userscriptUrl = 'https://raw.githubusercontent.com/Abdulmlik76/disney-plus-4khdr-enhanced/fix/sdk-26.15-fullhd/extension/DisneyPlus-Edge-Enhanced.user.js';
+const userscriptUrl = 'https://raw.githubusercontent.com/Abdulmlik76/disney-plus-4khdr-enhanced/experiment/nvidia-4k/extension/DisneyPlus-Edge-Enhanced.user.js';
 for (const key of ['downloadURL', 'updateURL']) {
   const line = source.split('\n').find((value) => value.startsWith(`// @${key} `));
   assert.equal(line?.split(/\s+/)[2], userscriptUrl, `@${key} points at the userscript on main`);

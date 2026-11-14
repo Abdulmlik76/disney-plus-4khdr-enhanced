@@ -4,10 +4,10 @@
 // @namespace    https://github.com/ioridev/disney-plus-edge-enhanced
 // @homepageURL  https://github.com/ioridev/disney-plus-4khdr-enhanced
 // @supportURL   https://github.com/ioridev/disney-plus-4khdr-enhanced/issues
-// @downloadURL  https://raw.githubusercontent.com/Abdulmlik76/disney-plus-4khdr-enhanced/fix/sdk-26.15-fullhd/extension/DisneyPlus-Edge-Enhanced.user.js
-// @updateURL    https://raw.githubusercontent.com/Abdulmlik76/disney-plus-4khdr-enhanced/fix/sdk-26.15-fullhd/extension/DisneyPlus-Edge-Enhanced.user.js
+// @downloadURL  https://raw.githubusercontent.com/Abdulmlik76/disney-plus-4khdr-enhanced/experiment/nvidia-4k/extension/DisneyPlus-Edge-Enhanced.user.js
+// @updateURL    https://raw.githubusercontent.com/Abdulmlik76/disney-plus-4khdr-enhanced/experiment/nvidia-4k/extension/DisneyPlus-Edge-Enhanced.user.js
 // @license      MIT
-// @version      0.5.7.1
+// @version      0.5.7.2
 // @description  Full-HD request mode and optional playback diagnostics for Disney+ on Windows Edge. Alt+Shift+4 opens the panel. Does not bypass DRM.
 // @description:ja Disney+のフルHD要求モードと任意表示の再生診断。Alt+Shift+4でパネルを開閉します。DRMは回避しません。
 // @match        https://www.disneyplus.com/*
@@ -20,9 +20,9 @@
 (() => {
   "use strict";
 
-  const VERSION = "0.5.7.1";
+  const VERSION = "0.5.7.2";
   const STORAGE_KEY = "ioridev.disneyplus4k.mode.v1";
-  const TEST_TICKET_KEY = "ioridev.disneyplus4k.once.v0.5.7.1";
+  const TEST_TICKET_KEY = "ioridev.disneyplus4k.once.v0.5.7.2";
   const CHECKPOINT_KEY = "ioridev.disneyplus4k.checkpoint.v1";
   const DEFAULT_MODE = "original";
   // Used only while no request mode has been saved. A saved "original" (OFF,
@@ -31,6 +31,7 @@
   const DEBUG_UI_KEY = "ioridev.disneyplus.debug-ui.v1";
   const TOOLBAR_CONTROL = "__DisneyPlusEdgeEnhancedToolbar";
   const INTEL_4K_MODE = "4k-hdr10-sdk-playready";
+  const NVIDIA_4K_MODE = "4k-hevc-sdk-playready";
   const TEST_TICKET_TTL_MS = 30000;
   const PLAYBACK_HOST = "disney.playback.edge.bamgrid.com";
   const PLAYBACK_PATH = /^\/v7\/playback\/([^/?#]+)$/;
@@ -59,9 +60,14 @@
   const SDK_KEY_CONFIGURATION_UNKNOWN = "unknown";
   const SDK_KEY_CONFIGURATION_ABSENT = "absent";
   const SUPPORTED_PLAYBACK_SDK = "26.10.0-jasmine";
+  const UHD_TEST_PLAYBACK_SDK = "26.15.0-owl";
+  function supportsUhdSdk(version, mode) {
+    return version === SUPPORTED_PLAYBACK_SDK
+      || (mode === NVIDIA_4K_MODE && version === UHD_TEST_PLAYBACK_SDK);
+  }
   // Service SDKs whose createPlaybackSession and clientParameters.configOverrides
   // ["hive-dmp"] merge were statically re-checked for the 1080p override path.
-  // The UHD session constructor hook stays pinned to SUPPORTED_PLAYBACK_SDK.
+  // HDR/probe hooks stay pinned; only the explicit non-HDR 4K test accepts 26.15.
   const FHD_PLAYBACK_SDKS = new Set([SUPPORTED_PLAYBACK_SDK, "26.13.3-mbaku", "26.14.2-nala", "26.15.0-owl"]);
   const MUTABLE_SCENARIOS = new Set([
     "ctr-regular",
@@ -1775,7 +1781,7 @@ function createSingleVariantNetworkAdapter({
     };
     try {
       const optionFields = recordDescriptors(options);
-      if (optionFields.playbackServiceVersion?.value !== SUPPORTED_PLAYBACK_SDK) return unchanged;
+      if (!supportsUhdSdk(optionFields.playbackServiceVersion?.value, mode)) return unchanged;
       const capabilities = optionFields.mediaCapabilities?.value;
       const capabilityFields = recordDescriptors(capabilities);
       const values = capabilityFields.videoResolutions?.value;
@@ -1895,16 +1901,19 @@ function createSingleVariantNetworkAdapter({
           && now >= ticket.createdAt && now - ticket.createdAt < TEST_TICKET_TTL_MS
           && localStore.getItem(STORAGE_KEY) === DEFAULT_MODE) {
           // Only this page runs 4K; the next load uses the earlier choice again.
-          storeMode(localStore, intel4kReturnMode(ticket));
+          storeMode(localStore, fourKReturnMode(ticket));
           if (ticket.requireIntelGpu === true && (ticket.mode !== INTEL_4K_MODE || gpuProbe() !== "intel")) {
             return { mode: DEFAULT_MODE, showDebug: true, notice: "再読み込み後にIntel GPUを確認できないため、4Kを開始せず無変更に戻しました。" };
+          }
+          if (ticket.requireNvidiaGpu === true && (ticket.mode !== NVIDIA_4K_MODE || gpuProbe() !== "nvidia")) {
+            return { mode: DEFAULT_MODE, showDebug: true, notice: "NVIDIA GPU could not be confirmed after reload; the 4K test was not started." };
           }
           return { mode: ticket.mode, notice: "今回のページのみ実験中。再読込・再起動後は無変更。次のページへ実験設定を引き継ぎません。" };
         }
         // A stale or malformed experimental ticket must never select another
         // saved request mode as an implicit fallback for this page. The next
         // load may use the Full HD choice that the Intel 4K page set aside.
-        if (ticket?.version === VERSION && localStore.getItem(STORAGE_KEY) === DEFAULT_MODE) storeMode(localStore, intel4kReturnMode(ticket));
+        if (ticket?.version === VERSION && localStore.getItem(STORAGE_KEY) === DEFAULT_MODE) storeMode(localStore, fourKReturnMode(ticket));
         return { mode: DEFAULT_MODE, notice: "実験の開始票が期限切れ・無効のため、無変更で起動しました。" };
       }
       return { mode, notice };
@@ -1913,23 +1922,26 @@ function createSingleVariantNetworkAdapter({
     }
   }
 
-  function intel4kReturnMode(ticket) {
-    return ticket?.requireIntelGpu === true && ticket.mode === INTEL_4K_MODE && ticket.returnMode === "fullhd" ? "fullhd" : DEFAULT_MODE;
+  function fourKReturnMode(ticket) {
+    const guarded4k = (ticket?.requireIntelGpu === true && ticket.mode === INTEL_4K_MODE)
+      || (ticket?.requireNvidiaGpu === true && ticket.mode === NVIDIA_4K_MODE);
+    return guarded4k && ticket.returnMode === "fullhd" ? "fullhd" : DEFAULT_MODE;
   }
 
-  function prepareModeReload(mode, localStore, sessionStore, documentUrl, now, requireIntelGpu = false) {
+  function prepareModeReload(mode, localStore, sessionStore, documentUrl, now, requireIntelGpu = false, requireNvidiaGpu = false) {
     if (!Object.prototype.hasOwnProperty.call(MODE_PLANS, mode)) return { reload: false, notice: "未知のモードです。" };
     if (requireIntelGpu && mode !== INTEL_4K_MODE) return { reload: false, notice: "Intel向け4K以外のモードです。" };
+    if (requireNvidiaGpu && mode !== NVIDIA_4K_MODE) return { reload: false, notice: "Not the NVIDIA 4K test mode." };
     let returnMode = null;
     try {
       clearTestTicket(sessionStore);
       if (isExperimentalMode(mode)) {
         if (typeof documentUrl !== "string" || new URL(documentUrl).origin !== "https://www.disneyplus.com" || !Number.isFinite(now)) throw new Error("Invalid context");
-        // Full HD (saved or the unsaved default) comes back after the Intel 4K page.
+        // Full HD (saved or the unsaved default) comes back after the explicitly selected 4K test page.
         const previous = localStore.getItem(STORAGE_KEY);
-        if (requireIntelGpu && (previous === "fullhd" || previous === null)) returnMode = "fullhd";
+        if ((requireIntelGpu || requireNvidiaGpu) && (previous === "fullhd" || previous === null)) returnMode = "fullhd";
         storeMode(localStore, DEFAULT_MODE);
-        const ticket = JSON.stringify({ version: VERSION, mode, documentUrl, createdAt: now, ...(requireIntelGpu ? { requireIntelGpu: true } : {}), ...(returnMode ? { returnMode } : {}) });
+        const ticket = JSON.stringify({ version: VERSION, mode, documentUrl, createdAt: now, ...(requireIntelGpu ? { requireIntelGpu: true } : {}), ...(requireNvidiaGpu ? { requireNvidiaGpu: true } : {}), ...(returnMode ? { returnMode } : {}) });
         sessionStore.setItem(TEST_TICKET_KEY, ticket);
         if (sessionStore.getItem(TEST_TICKET_KEY) !== ticket) throw new Error("Ticket persistence failed");
       } else storeMode(localStore, mode);
@@ -2421,6 +2433,7 @@ function createSingleVariantNetworkAdapter({
       detectGpuVendor,
       checkIntel4kEligibility,
       INTEL_4K_MODE,
+      NVIDIA_4K_MODE,
       checkpointPhase,
       readCheckpoint,
       normalizeSessionClosedReason,
@@ -2832,9 +2845,12 @@ function createSingleVariantNetworkAdapter({
     sdkUhdPublicationSetter = (exported) => {
       try {
         const scriptUrl = new URL(document.currentScript?.src || "");
+        const sessionVersion = [SUPPORTED_PLAYBACK_SDK, UHD_TEST_PLAYBACK_SDK].find((version) =>
+          supportsUhdSdk(version, state.mode)
+          && scriptUrl.pathname === `/artifacts/hive/playback-session/${version}/all_browser_es6/playback-session.js`);
         if (scriptUrl.protocol !== "https:" || scriptUrl.hostname !== "hiveplayer-static.bamgrid.com"
           || scriptUrl.port || scriptUrl.username || scriptUrl.password || scriptUrl.search || scriptUrl.hash
-          || scriptUrl.pathname !== `/artifacts/hive/playback-session/${SUPPORTED_PLAYBACK_SDK}/all_browser_es6/playback-session.js`) {
+          || !sessionVersion) {
           throw new Error("Unsupported session SDK source");
         }
         if (!exported || typeof exported !== "object" || Array.isArray(exported)
@@ -2853,7 +2869,8 @@ function createSingleVariantNetworkAdapter({
               throw fail("SDK選別ポリシーの適用条件を確認できず、セッション作成を中止");
             }
             const planned = planSdkResolutionPolicy(args[0], state.mode);
-            if (!planned.valid) throw fail("未知のSDK解像度リスト・引数のためUHD比較を中止");
+            if (!planned.valid || planned.options.playbackServiceVersion !== sessionVersion
+              || state.sdkDetectedVersion !== sessionVersion) throw fail("未知のSDK解像度リスト・引数のためUHD比較を中止");
             const sessionKeyConfiguration = inspectSdkSessionKeyConfiguration(args[0]);
             state.sdkSessionKeyConfiguration = sessionKeyConfiguration;
             state.sdkSessionKeyConfigurationStatus = describeSdkSessionKeyConfiguration(sessionKeyConfiguration);
@@ -2911,7 +2928,7 @@ function createSingleVariantNetworkAdapter({
         state.sdkDetectedVersion = typeof version === "string" && /^\d{1,3}\.\d{1,3}\.\d{1,3}-[a-z0-9]{1,24}$/.test(version)
           ? version : "unrecognized";
         const supported = typeof Service === "function" && (getModePlan(state.mode).sdkUhdPolicy
-          ? version === SUPPORTED_PLAYBACK_SDK
+          ? supportsUhdSdk(version, state.mode)
           : FHD_PLAYBACK_SDKS.has(version));
         if (!supported) {
           state.sdkConfigStatus = `Unsupported SDK (${state.sdkDetectedVersion}); resolution settings were not applied. Select OFF and reload to use Disney+ defaults.`;
@@ -3889,9 +3906,9 @@ function createSingleVariantNetworkAdapter({
     publishToolbarState();
   }
 
-  // Everyday panel: Full HD / OFF only. Diagnostic modes stay in the collapsed
+  // Everyday panel: Full HD / OFF and explicit GPU-gated 4K tests. Diagnostics stay in the collapsed
   // developer section.
-  const USER_MODES = Object.freeze(["fullhd", DEFAULT_MODE, INTEL_4K_MODE]);
+  const USER_MODES = Object.freeze(["fullhd", DEFAULT_MODE, INTEL_4K_MODE, NVIDIA_4K_MODE]);
   const LAUNCHER_IDLE_MS = 3000;
 
   // The everyday panel follows the browser language: Japanese for ja, English
@@ -3923,6 +3940,9 @@ function createSingleVariantNetworkAdapter({
       reloadFailed: "ページを再読み込みできませんでした。実験を終了するにはタブを閉じてください。",
       intelRequired: "Intel GPUを確認できなかったため、4Kは開始していません。",
       intel4kChoice: "4K（Intel・このページのみ）",
+      nvidia4kChoice: "4Kテスト（NVIDIA・このページのみ）",
+      nvidia4kStatus: "最大3840×2160を要求します（HDRは要求しません）。実機未確認。DRM・出力保護の判定は維持します。再読み込みで前の設定に戻ります。",
+      nvidiaRequired: "NVIDIA GPUを確認できなかったため、4Kテストは開始していません。",
       intel4kStatus: "4K（HDR10）の映像を要求します。このページだけで、再読み込みすると元の設定に戻ります。",
       amdFound: "AMDのGPUも見つかったため、4Kは開始していません。AMDを通る4K/HDRでは、PCのフリーズが起きています。",
       gpuUnchecked: "GPUの構成を確認できなかったため、4Kは開始していません。",
@@ -3948,6 +3968,9 @@ function createSingleVariantNetworkAdapter({
       reloadFailed: "The page could not be reloaded. Close the tab to end the test.",
       intelRequired: "4K was not started because an Intel GPU could not be confirmed.",
       intel4kChoice: "4K (Intel, this page only)",
+      nvidia4kChoice: "4K test (NVIDIA, this page only)",
+      nvidia4kStatus: "Requests up to 3840×2160 without requesting HDR. Experimental: actual 4K playback is unverified. DRM and output checks still apply. Reload to return to your previous setting.",
+      nvidiaRequired: "The 4K test was not started because an NVIDIA GPU could not be confirmed.",
       intel4kStatus: "Requests the 4K (HDR10) video. This page only: reloading returns to your previous setting.",
       amdFound: "4K was not started because an AMD GPU was also found. 4K/HDR through AMD has frozen PCs.",
       gpuUnchecked: "4K was not started because the GPU setup could not be checked.",
@@ -3963,6 +3986,7 @@ function createSingleVariantNetworkAdapter({
     if (state.mode === "fullhd") return UI_TEXT.fullhdOn;
     if (state.mode === DEFAULT_MODE) return UI_TEXT.off;
     if (state.mode === INTEL_4K_MODE) return UI_TEXT.intel4k;
+    if (state.mode === NVIDIA_4K_MODE) return UI_TEXT.nvidia4kChoice;
     return isExperimentalMode(state.mode) ? UI_TEXT.diagnosticOnce : UI_TEXT.diagnostic;
   }
 
@@ -3975,6 +3999,7 @@ function createSingleVariantNetworkAdapter({
     if (plan.continuousFhd) return state.singleVariantAccepted ? UI_TEXT.fullhdSelected : UI_TEXT.fullhdWaiting;
     if (state.mode === DEFAULT_MODE) return UI_TEXT.originalStatus;
     if (state.mode === INTEL_4K_MODE) return UI_TEXT.intel4kStatus;
+    if (state.mode === NVIDIA_4K_MODE) return UI_TEXT.nvidia4kStatus;
     return UI_LANGUAGE === "ja" ? `${plan.label}。${UI_TEXT.diagnosticStatus}` : UI_TEXT.diagnosticStatus;
   }
 
@@ -3990,6 +4015,7 @@ function createSingleVariantNetworkAdapter({
     if (state.mode === "fullhd") return { text: "HD", tone: "on" };
     if (state.mode === DEFAULT_MODE) return { text: "OFF", tone: "off" };
     if (state.mode === INTEL_4K_MODE) return { text: "4K", tone: "on" };
+    if (state.mode === NVIDIA_4K_MODE) return { text: "4K?", tone: "debug" };
     return { text: "DBG", tone: "debug" };
   }
 
@@ -4012,8 +4038,9 @@ function createSingleVariantNetworkAdapter({
     state.overlay.launcher.dataset.tone = badge.tone;
     elements.summary.textContent = describeUserMode();
     for (const choice of elements.choices) {
-      // 4K is offered only after the Intel check passed on this page.
+      // Each optional 4K entry follows its GPU check; an active test stays visible.
       if (choice.dataset.mode === INTEL_4K_MODE) choice.hidden = state.mode !== INTEL_4K_MODE && state.intel4kEligibility !== "eligible";
+      if (choice.dataset.mode === NVIDIA_4K_MODE) choice.hidden = state.mode !== NVIDIA_4K_MODE && gpuVendorHint !== "nvidia";
       choice.setAttribute("aria-checked", String(choice.dataset.mode === state.mode));
       choice.disabled = state.modeReloadPending;
     }
@@ -4154,6 +4181,7 @@ function createSingleVariantNetworkAdapter({
             <button class="choice" type="button" role="radio" data-mode="fullhd">${UI_TEXT.fullhd}</button>
             <button class="choice" type="button" role="radio" data-mode="original">${UI_TEXT.original}</button>
             <button class="choice choice-4k" type="button" role="radio" data-mode="${INTEL_4K_MODE}" hidden>${UI_TEXT.intel4kChoice}</button>
+            <button class="choice choice-4k" type="button" role="radio" data-mode="${NVIDIA_4K_MODE}" hidden>${UI_TEXT.nvidia4kChoice}</button>
           </div>
           <p class="status" role="status"></p>
           <dl>
@@ -4274,7 +4302,7 @@ function createSingleVariantNetworkAdapter({
         safelyObserve(() => {
           const ticket = JSON.parse(sessionStorage.getItem(TEST_TICKET_KEY) || "null");
           clearTestTicket(sessionStorage);
-          if (intel4kReturnMode(ticket) === "fullhd") storeMode(localStorage, "fullhd");
+          if (fourKReturnMode(ticket) === "fullhd") storeMode(localStorage, "fullhd");
         });
         state.modeReloadPending = false;
         state.guardNotice = "再読込を開始できませんでした。実験を終了するにはタブを閉じてください。";
@@ -4289,6 +4317,11 @@ function createSingleVariantNetworkAdapter({
         if (choice.dataset.mode === state.mode && !state.playbackBlocked && !state.singleVariantFailed) return;
         if (choice.dataset.mode === INTEL_4K_MODE) {
           void armIntel4k().then((outcome) => { if (outcome.reload) reloadNow(); });
+          return;
+        }
+        if (choice.dataset.mode === NVIDIA_4K_MODE) {
+          const outcome = armNvidia4k();
+          if (outcome.reload) reloadNow();
           return;
         }
         switchMode(choice.dataset.mode);
@@ -4329,6 +4362,21 @@ function createSingleVariantNetworkAdapter({
       return result;
     });
     return intel4kChoiceCheck;
+  }
+
+  function armNvidia4k() {
+    if (state.modeReloadPending || intel4kArming) return { ok: false, reason: "reload-pending" };
+    if (probeGpuVendor() !== "nvidia") {
+      state.switchNotice = UI_TEXT.nvidiaRequired;
+      renderOverlay();
+      return { ok: false, reason: "nvidia-gpu-required" };
+    }
+    const outcome = prepareModeReload(NVIDIA_4K_MODE, localStorage, sessionStorage, location.href, Date.now(), false, true);
+    state.modeReloadPending = outcome.reload;
+    state.guardNotice = outcome.notice;
+    state.switchNotice = outcome.reload ? "" : localNotice(outcome.notice, "switchFailed");
+    renderOverlay();
+    return { ok: outcome.reload, reload: outcome.reload, mode: NVIDIA_4K_MODE };
   }
 
   async function armIntel4k() {
@@ -4391,9 +4439,10 @@ function createSingleVariantNetworkAdapter({
       toggleDebug: () => setDebugVisibility(!state.debugVisible),
       // Async: scripting.executeScript waits for the promise. Same check as the panel.
       prepareIntel4k: () => armIntel4k(),
+      prepareNvidia4k: () => armNvidia4k(),
       prepareToggle: () => {
         if (state.modeReloadPending) return { ok: false, reason: "reload-pending" };
-        const enabled = getModePlan(state.mode).continuousFhd || state.mode === INTEL_4K_MODE;
+        const enabled = getModePlan(state.mode).continuousFhd || state.mode === INTEL_4K_MODE || state.mode === NVIDIA_4K_MODE;
         const mode = enabled && !state.singleVariantFailed && !state.playbackBlocked ? DEFAULT_MODE : "fullhd";
         const outcome = prepareModeReload(mode, localStorage, sessionStorage, location.href, Date.now());
         state.modeReloadPending = outcome.reload;

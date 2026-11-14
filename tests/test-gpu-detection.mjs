@@ -50,6 +50,37 @@ const storage = () => {
   return {getItem: (key) => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: (key) => values.delete(key)};
 };
 const url = 'https://www.disneyplus.com/ja-jp/play/gpu-fixture';
+// The NVIDIA test also consumes its ticket before probing and preserves the
+// working everyday preference. It never becomes a saved default.
+for (const previous of [null, 'fullhd', 'original']) {
+  for (const gpu of ['nvidia', 'intel', 'amd', 'unknown', 'software']) {
+    const local = storage();
+    const session = storage();
+    if (previous !== null) local.setItem(api.STORAGE_KEY, previous);
+    assert.equal(api.prepareModeReload(api.NVIDIA_4K_MODE, local, session, url, 100, false, true).reload, true);
+    const ticket = JSON.parse(session.getItem(api.TEST_TICKET_KEY));
+    assert.equal(ticket.requireNvidiaGpu, true);
+    assert.equal(local.getItem(api.STORAGE_KEY), 'original');
+    const outcome = api.consumeStartupMode(local, session, url, 101, 'reload', () => {
+      assert.equal(session.getItem(api.TEST_TICKET_KEY), null);
+      return gpu;
+    });
+    assert.equal(outcome.mode, gpu === 'nvidia' ? api.NVIDIA_4K_MODE : 'original');
+    const expected = previous === 'original' ? 'original' : 'fullhd';
+    assert.equal(local.getItem(api.STORAGE_KEY), expected);
+    assert.equal(api.consumeStartupMode(local, session, url, 102, 'reload', () => 'nvidia').mode, expected);
+  }
+}
+{
+  const local = storage();
+  const session = storage();
+  local.setItem(api.STORAGE_KEY, 'fullhd');
+  assert.equal(api.prepareModeReload('fullhd', local, session, url, 100, false, true).reload, false);
+  assert.equal(api.prepareModeReload(api.NVIDIA_4K_MODE, local, session, url, 100, true, true).reload, false);
+  api.prepareModeReload(api.NVIDIA_4K_MODE, local, session, url, 100, false, true);
+  assert.equal(api.consumeStartupMode(local, session, url, 60100, 'reload', () => 'nvidia').mode, 'original');
+  assert.equal(local.getItem(api.STORAGE_KEY), 'fullhd', 'expired NVIDIA ticket preserves Full HD');
+}
 // The Intel 4K page is one page only. Afterwards the earlier everyday choice
 // comes back: Full HD (saved or the unsaved default) or OFF.
 for (const [previous, after] of [[null, 'fullhd'], ['fullhd', 'fullhd'], ['original', 'original']]) {

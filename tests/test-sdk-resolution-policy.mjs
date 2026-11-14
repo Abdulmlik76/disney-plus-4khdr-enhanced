@@ -8,8 +8,8 @@ const MODE_SDR = '4k-hevc-sdk-playready';
 const SDK_MODE = process.argv[2] ?? MODE_HDR10;
 assert.ok([MODE_HDR10, MODE_SDR].includes(SDK_MODE),
   `usage: node tests/test-sdk-resolution-policy.mjs <${MODE_HDR10}|${MODE_SDR}>`);
-const SDK_VERSION = '26.10.0-jasmine';
-const SCRIPT_VERSION = '0.5.7.1';
+const SDK_VERSION = process.argv[3] ?? '26.10.0-jasmine';
+const SCRIPT_VERSION = '0.5.7.2';
 const TICKET_KEY = `ioridev.disneyplus4k.once.v${SCRIPT_VERSION}`;
 const DOCUMENT_URL = 'https://www.disneyplus.com/ja-jp/play/sdk-resolution-policy-test';
 const PLAYBACK_SCENARIO = SDK_MODE === MODE_HDR10 ? 'tv-drm-ctr-h265-hdr10-atmos' : 'tv-drm-ctr-h265-atmos';
@@ -261,7 +261,7 @@ const makeOverlayDocument = () => {
     set innerHTML(_value) {},
     querySelector: (selector) => nodes.get(selector) || node(selector),
     querySelectorAll: (selector) => selector === '.choice'
-      ? ['fullhd', 'original', MODE_HDR10].map((mode) => Object.assign(nodes.get(`.choice:${mode}`) || node(`.choice:${mode}`), {dataset: {mode}}))
+      ? ['fullhd', 'original', MODE_HDR10, MODE_SDR].map((mode) => Object.assign(nodes.get(`.choice:${mode}`) || node(`.choice:${mode}`), {dataset: {mode}}))
       : [],
   };
   for (const selector of selectors) node(selector);
@@ -756,11 +756,11 @@ for (const sessionKind of ['accessor', 'data']) {
   assert.equal(control.getState().mode, SDK_MODE);
   control.toggleDebug();
   const intel = SDK_MODE === MODE_HDR10;
-  assert.equal(runtime.overlayNodes.get('.dev')?.open === true, !intel, 'only a diagnostic mode opens the developer section');
+  assert.equal(runtime.overlayNodes.get('.dev')?.open === true, false, 'the two explicit 4K choices do not require developer controls');
   assert.equal(runtime.overlayNodes.get(`.choice:${MODE_HDR10}`).hidden, !intel, 'the 4K choice shows on the Intel 4K page');
   if (intel) assert.match(runtime.overlayNodes.get('.status').textContent, /このページだけ/);
-  assert.equal(runtime.overlayNodes.get('.badge').textContent, intel ? '4K' : 'DBG');
-  assert.match(runtime.overlayNodes.get('.summary').textContent, intel ? /Intel向け4K/ : /診断モード/);
+  assert.equal(runtime.overlayNodes.get('.badge').textContent, intel ? '4K' : '4K?');
+  assert.match(runtime.overlayNodes.get('.summary').textContent, intel ? /Intel向け4K/ : /4Kテスト/);
   let reloads = 0;
   runtime.context.location.reload = () => { reloads++; };
   runtime.overlayEvents.get('.choice:fullhd:click')();
@@ -779,12 +779,49 @@ for (const sessionKind of ['accessor', 'data']) {
   runtime.context.__DisneyPlusEdgeEnhancedToolbar.toggleDebug();
   const summary = runtime.overlayNodes.get('.summary').textContent;
   const status = runtime.overlayNodes.get('.status').textContent;
-  assert.match(summary, SDK_MODE === MODE_HDR10 ? /^Intel 4K request/ : /^Diagnostic mode/);
-  assert.match(status, SDK_MODE === MODE_HDR10 ? /This page only/ : /choose Full HD or OFF/);
+  assert.match(summary, SDK_MODE === MODE_HDR10 ? /^Intel 4K request/ : /^4K test/);
+  assert.match(status, SDK_MODE === MODE_HDR10 ? /This page only/ : /3840×2160.*unverified/);
   assert.doesNotMatch(summary + status, /[\u3040-\u30ff\u4e00-\u9fff]/, 'no Japanese in the English everyday panel');
 }
 
 const INTEL_ADAPTERS = {'high-performance': {vendor: 'intel'}, 'low-power': {vendor: 'intel'}};
+for (const vendor of ['NVIDIA', 'Intel', 'AMD', 'unknown']) {
+  const runtime = createRuntime({documentElement: true, webgl: vendor});
+  const control = runtime.context.__DisneyPlusEdgeEnhancedToolbar;
+  runtime.localStorage.setItem('ioridev.disneyplus4k.mode.v1', 'fullhd');
+  control.toggleDebug();
+  for (let i = 0; i < 12; i++) await Promise.resolve();
+  const choice = runtime.overlayNodes.get(`.choice:${MODE_SDR}`);
+  assert.equal(choice.hidden, SDK_MODE !== MODE_SDR && vendor !== 'NVIDIA');
+  if (SDK_MODE !== MODE_SDR && vendor === 'NVIDIA') {
+    let reloads = 0;
+    runtime.context.location.reload = () => { reloads++; };
+    runtime.overlayEvents.get(`.choice:${MODE_SDR}:click`)();
+    assert.equal(reloads, 1, 'NVIDIA panel choice reloads once');
+  } else {
+    assert.equal(control.prepareNvidia4k().ok, vendor === 'NVIDIA');
+  }
+  const ticket = JSON.parse(runtime.sessionStorage.getItem(TICKET_KEY));
+  if (vendor === 'NVIDIA') {
+    assert.equal(ticket.mode, MODE_SDR);
+    assert.equal(ticket.requireNvidiaGpu, true);
+    assert.equal(ticket.returnMode, 'fullhd');
+    assert.equal(control.prepareNvidia4k().ok, false, 'no double arming');
+  } else assert.equal(ticket, null);
+  assert.equal(runtimeJson(runtime, 'nativeEmeCalls.length'), 0, 'the button does not probe DRM or start playback');
+}
+
+if (SDK_MODE === MODE_SDR) {
+  const otherVersion = SDK_VERSION === '26.15.0-owl' ? '26.10.0-jasmine' : '26.15.0-owl';
+  const runtime = createRuntime();
+  installService(runtime);
+  publishSession(runtime, {src: SESSION_SDK_URL.replace(SDK_VERSION, otherVersion)});
+  await vm.runInContext('sdkInstance.createPlaybackSession(makeRuntimeOptions())', runtime.context);
+  assert.throws(() => vm.runInContext("new globalThis['playback-session'].PlaybackSession(makeRuntimeOptions())", runtime.context),
+    error => error.name === 'AbortError', 'individually known but mismatched service/session releases are rejected');
+  assert.equal(runtimeJson(runtime, 'nativeConstructorCalls.length'), 0);
+  await assertBlocked(runtime, 'mismatched SDK pair');
+}
 for (const [vendor, webgpu] of [['Intel', INTEL_ADAPTERS], ['NVIDIA', INTEL_ADAPTERS], ['AMD', INTEL_ADAPTERS], ['unknown', INTEL_ADAPTERS],
   ['Intel', {'high-performance': {vendor: 'amd'}, 'low-power': {vendor: 'intel'}}], ['Intel', null]]) {
   const runtime = createRuntime({webgpu});

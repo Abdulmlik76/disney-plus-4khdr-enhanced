@@ -26,8 +26,8 @@ export function applyPageCommand(command) {
       // next reload. Do not inject another copy into an old playback session.
       const key = 'ioridev.disneyplus4k.mode.v1';
       const mode = localStorage.getItem(key) === 'fullhd' ? 'original' : 'fullhd';
-      sessionStorage.removeItem('ioridev.disneyplus4k.once.v0.5.7.1');
-      if (sessionStorage.getItem('ioridev.disneyplus4k.once.v0.5.7.1') !== null) return { ok: false };
+      sessionStorage.removeItem('ioridev.disneyplus4k.once.v0.5.7.2');
+      if (sessionStorage.getItem('ioridev.disneyplus4k.once.v0.5.7.2') !== null) return { ok: false };
       localStorage.setItem(key, mode);
       return { ok: localStorage.getItem(key) === mode, reload: true, mode };
     }
@@ -81,6 +81,7 @@ export function badgeState(report, language = 'ja') {
   if (report?.reason === 'intel-gpu-required') return { text: '!', color: '#946200', title: text.intelRequired };
   if (report?.reason === 'reload-required') return { text: '!', color: '#946200', title: text.reloadRequired };
   if (report?.failed === true) return { text: '!', color: '#b42318', title: text.failed };
+  if (report?.mode === '4k-hevc-sdk-playready') return { text: '4K?', color: '#946200', title: 'Experimental 4K request (this page only; check actual video dimensions)' };
   if (report?.mode === '4k-hdr10-sdk-playready') return { text: '4K', color: '#1769e0', title: text.intel4k };
   if (report?.mode === 'fullhd') return { text: 'HD', color: '#1769e0', title: text.fullhd };
   if (report?.mode && report.mode !== 'original') return { text: 'DBG', color: '#946200', title: text.diagnostic };

@@ -14,6 +14,8 @@ for (const mode of ['4k-hdr10-sdk-playready', '4k-hevc-sdk-playready']) {
   runs.push(['test-request-retirement.mjs', mode]);
 }
 runs.push(['test-sdk-resolution-policy.mjs', '4k-hevc-sdk-playready']);
+runs.push(['test-sdk-resolution-policy.mjs', '4k-hevc-sdk-playready', '26.15.0-owl']);
+runs.push(['test-sdk-playready-flow.mjs', '4k-hevc-sdk-playready', '26.15.0-owl']);
 
 for (const [name, ...args] of runs) {
   console.log(`\n> ${name}${args.length ? ` (${args.join(', ')})` : ''}`);

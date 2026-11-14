@@ -7,16 +7,17 @@ const MODE_1080 = '1080p-hevc-sdk-playready';
 const MODE_UHD = '4k-hdr10-sdk-playready';
 const MODE_UHD_HEVC = '4k-hevc-sdk-playready';
 const MODE = process.argv[2] ?? MODE_1080;
+const SDK_VERSION = process.argv[3] ?? '26.10.0-jasmine';
 const IS_UHD = [MODE_UHD, MODE_UHD_HEVC].includes(MODE);
 assert.ok([MODE_1080, MODE_UHD, MODE_UHD_HEVC].includes(MODE),
   `usage: node tests/test-sdk-playready-flow.mjs <${MODE_1080}|${MODE_UHD}|${MODE_UHD_HEVC}>`);
 const NATIVE_CAP_MODE = '1080p-hevc-native-cap';
-const SCRIPT_VERSION = '0.5.7.1';
+const SCRIPT_VERSION = '0.5.7.2';
 const TICKET_KEY = `ioridev.disneyplus4k.once.v${SCRIPT_VERSION}`;
 const STORAGE_KEY = 'ioridev.disneyplus4k.mode.v1';
 const CHECKPOINT_KEY = 'ioridev.disneyplus4k.checkpoint.v1';
 const DOCUMENT_URL = 'https://www.disneyplus.com/ja-jp/play/sdk-playready-flow-test';
-const PLAYBACK_SESSION_URL = `https://hiveplayer-static.bamgrid.com/artifacts/hive/playback-session/26.10.0-jasmine/all_browser_es6/playback-session.js`;
+const PLAYBACK_SESSION_URL = `https://hiveplayer-static.bamgrid.com/artifacts/hive/playback-session/${SDK_VERSION}/all_browser_es6/playback-session.js`;
 const PLAYREADY_IDS = [
   'com.microsoft.playready.recommendation.3000',
   'com.microsoft.playready.recommendation',
@@ -134,7 +135,7 @@ vm.runInContext(`
       const Session = globalThis['playback-session']?.PlaybackSession;
       if (typeof Session !== 'function') throw new Error('session SDK was not published');
       const sessionOptions = {
-        playbackServiceVersion: '26.10.0-jasmine',
+        playbackServiceVersion: ${JSON.stringify(SDK_VERSION)},
         mediaCapabilities: {
           videoResolutions: ['SD', 'HD', 'FHD'],
           audioResolutions: ['STEREO', '5.1'],
@@ -146,7 +147,7 @@ vm.runInContext(`
       return Promise.resolve({sdk: true});
     }
   }
-  Object.defineProperty(TestPlaybackService, 'version', {value: '26.10.0-jasmine', configurable: true});
+  Object.defineProperty(TestPlaybackService, 'version', {value: ${JSON.stringify(SDK_VERSION)}, configurable: true});
   globalThis.sdkNativeCreate = TestPlaybackService.prototype.createPlaybackSession;
   globalThis.sdkInstance = new TestPlaybackService();
   globalThis.sdkExport = {PlaybackService: TestPlaybackService};
@@ -221,7 +222,7 @@ if (IS_UHD) {
     nativeThis: true,
     argCount: 2,
     marker: 'native-session',
-    playbackServiceVersion: '26.10.0-jasmine',
+    playbackServiceVersion: SDK_VERSION,
     videoResolutions: ['SD', 'HD', 'FHD', 'UHD'],
     audioResolutions: ['STEREO', '5.1'],
   }, 'UHD SDK constructor receives the per-session UHD policy copy');
